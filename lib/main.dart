@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:heritage_arc/home_screen.dart';
+
+import 'package:heritage_arc/screens/app_shell.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
  // 1. Import the SDK
 
@@ -29,7 +30,7 @@ class MyApp extends StatelessWidget {
         // Fixed the missing ColorScheme syntax error
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const HomeScreen(),
+      home: const AppShell(),
     );
   }
 }

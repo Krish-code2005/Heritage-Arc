@@ -15,8 +15,9 @@ class Person {
   final String? phone;
   final String? email;
   final String? partnerName;
-  final String? photoUrl;        // ← New: For storing image URL from Supabase Storage
+  final String? photoUrl;        // ← For storing image URL from Supabase Storage
   final String? fatherId;
+  final String? lineageId;       // ← New: which family tree this person belongs to
   int parentCount;
 
   Person({
@@ -35,8 +36,9 @@ class Person {
     this.phone,
     this.email,
     this.partnerName,
-    this.photoUrl,               // ← New
+    this.photoUrl,
     this.fatherId,
+    this.lineageId,              // ← New
     this.parentCount = 0,
   });
 
@@ -61,8 +63,9 @@ class Person {
       phone: map['phone'] as String?,
       email: map['email'] as String?,
       partnerName: map['partner_name'] as String?,
-      photoUrl: map['photo_url'] as String?,           // ← New
+      photoUrl: map['photo_url'] as String?,
       fatherId: map['father_id'] as String?,
+      lineageId: map['lineage_id'] as String?,   // ← New
     );
   }
 
@@ -83,8 +86,9 @@ class Person {
       'phone': phone,
       'email': email,
       'partner_name': partnerName,
-      'photo_url': photoUrl,                           // ← New
+      'photo_url': photoUrl,
       'father_id': fatherId,
+      'lineage_id': lineageId,     // ← New
     };
   }
 
@@ -106,6 +110,7 @@ class Person {
     String? partnerName,
     String? photoUrl,
     String? fatherId,
+    String? lineageId,
     int? parentCount,
   }) {
     return Person(
@@ -126,6 +131,7 @@ class Person {
       partnerName: partnerName ?? this.partnerName,
       photoUrl: photoUrl ?? this.photoUrl,
       fatherId: fatherId ?? this.fatherId,
+      lineageId: lineageId ?? this.lineageId,
       parentCount: parentCount ?? this.parentCount,
     );
   }

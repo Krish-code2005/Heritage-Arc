@@ -2,11 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:graphview/GraphView.dart';
-import 'package:heritage_arc/person.dart';
+import 'package:heritage_arc/models/person.dart';
 import 'package:heritage_arc/ProfileEditScreen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+ final String lineageId;
+  const HomeScreen({super.key, required this.lineageId});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -14,6 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final bool isLoggedIn = Supabase.instance.client.auth.currentSession != null;
 
   final Graph graph = Graph()..isTree = true;
   late BuchheimWalkerConfiguration builder;
@@ -22,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final Map<String, Person> persons = {};
   late Future<void> _loadFuture;
+
 
   @override
   void initState() {
@@ -40,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // DATA LOADING — two-pass compiler
   // ---------------------------------------------------------------------
   Future<void> _loadGraph() async {
-    final response = await _supabase.from('profiles').select();
+   final response = await _supabase
+    .from('profiles')
+    .select()
+    .eq('lineage_id', widget.lineageId);
     final rows = response as List<dynamic>;
 
     persons.clear();
@@ -110,7 +116,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final result = await Navigator.push<Person>(
       context,
-      MaterialPageRoute(builder: (_) => const ProfileEditScreen(isParent: true)),
+      MaterialPageRoute(
+        builder: (_) => ProfileEditScreen(
+          isParent: true,
+          lineageId: widget.lineageId,
+        ),
+      ),
     );
     if (result == null) return;
 
@@ -154,7 +165,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }) async {
     final result = await Navigator.push<Person>(
       context,
-      MaterialPageRoute(builder: (_) => const ProfileEditScreen()),
+      MaterialPageRoute(
+        builder: (_) => ProfileEditScreen(
+          lineageId: widget.lineageId,
+        ),
+      ),
     );
     if (result == null) return;
 
@@ -177,7 +192,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final result = await Navigator.push<Person>(
       context,
-      MaterialPageRoute(builder: (_) => ProfileEditScreen(person: person)),
+      MaterialPageRoute(
+        builder: (_) => ProfileEditScreen(
+          person: person,
+          lineageId: widget.lineageId,
+        ),
+      ),
     );
     if (result == null) return;
 
@@ -197,7 +217,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _addRootPerson() async {
     final result = await Navigator.push<Person>(
       context,
-      MaterialPageRoute(builder: (_) => const ProfileEditScreen()),
+      MaterialPageRoute(
+        builder: (_) => ProfileEditScreen(
+          lineageId: widget.lineageId,
+        ),
+      ),
     );
     if (result == null) return;
 
@@ -215,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(title: const Text('Family Tree')),
+
       body: SafeArea(
         child: FutureBuilder<void>(
           future: _loadFuture,
@@ -256,34 +280,38 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
-      floatingActionButton: _hasAnyData
-          ? null
-          : FloatingActionButton(
-              onPressed: _addRootPerson,
-              child: const Icon(Icons.person_add),
-            ),
+     floatingActionButton: (!isLoggedIn || _hasAnyData)
+    ? null // Hidden completely if logged out OR if data already exists
+    : FloatingActionButton(
+        onPressed: isLoggedIn ? _addRootPerson : null, // Extra security check
+        child: const Icon(Icons.person_add),
+      ),
     );
   }
 Widget _buildProfileCard(Person person, Node node) {
-  final bool canAddParent = person.fatherId == null;
+  // 1. Get the current authentication state
+  final bool isLoggedIn = Supabase.instance.client.auth.currentSession != null;
+  
+  // Show the add parent button ONLY if they have no fatherId AND are logged in
+  final bool showAddParent = person.fatherId == null && isLoggedIn;
 
   return Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      // Upper Add Parent Button
-      if (canAddParent)
+      // Upper Add Parent Button (Hidden completely if not logged in)
+      if (showAddParent)
         IconButton(
           icon: const Icon(Icons.add_circle, color: Colors.blue, size: 30),
-          onPressed: () => _openAddParentForm(targetPerson: person),
+          // Extra safety: set onPressed to null if not logged in (disables mechanically)
+          onPressed: isLoggedIn ? () => _openAddParentForm(targetPerson: person) : null,
         ),
 
       GestureDetector(
         onTap: () => _editPerson(node),
         child: Container(
-          // 1. Controls responsiveness via constraints instead of a fixed width/height
           width: 200, 
           constraints: const BoxConstraints(
-            minHeight: 180, // Gives a baseline height for empty/short profiles
+            minHeight: 180, 
           ),
           margin: const EdgeInsets.symmetric(vertical: 4),
           decoration: BoxDecoration(
@@ -300,7 +328,6 @@ Widget _buildProfileCard(Person person, Node node) {
           ),
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
           child: Column(
-            // 2. MainAxisSize.min allows the column to compress or expand with text lines
             mainAxisSize: MainAxisSize.min, 
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -326,7 +353,7 @@ Widget _buildProfileCard(Person person, Node node) {
               ),
               
               if (person.dob != null) ...[
-                const SizedBox(height: 4), // Added small space between rows
+                const SizedBox(height: 4), 
                 Text(
                   '${person.dob}',
                   style: const TextStyle(fontSize: 12.5, color: Colors.grey),
@@ -364,11 +391,12 @@ Widget _buildProfileCard(Person person, Node node) {
         ),
       ),
 
-      // Lower Add Child Button
-      IconButton(
-        icon: const Icon(Icons.add_circle, color: Colors.green, size: 30),
-        onPressed: () => _openAddChildForm(targetPerson: person),
-      ),
+      // Lower Add Child Button (Hidden completely if not logged in)
+      if (isLoggedIn)
+        IconButton(
+          icon: const Icon(Icons.add_circle, color: Colors.green, size: 30),
+          onPressed: isLoggedIn ? () => _openAddChildForm(targetPerson: person) : null,
+        ),
     ],
   );
 }}

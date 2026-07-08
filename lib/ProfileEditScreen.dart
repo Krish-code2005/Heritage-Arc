@@ -1,14 +1,13 @@
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:heritage_arc/person.dart';
+import 'package:heritage_arc/models/person.dart';
 import 'package:flutter/services.dart';
 
-// Palette pulled from the reference card
-const _kAccentStart = Color(0xFFEF4A6D); // pink
-const _kAccentEnd = Color(0xFFF6A94A);   // orange
+// Palette
+const _kAccentStart = Color(0xFFEF4A6D);
+const _kAccentEnd = Color(0xFFF6A94A);
 const _kFieldFill = Color(0xFFF5F5F7);
 const _kLabelColor = Color(0xFF111111);
 const _kHintColor = Color(0xFF9B9B9B);
@@ -16,11 +15,13 @@ const _kHintColor = Color(0xFF9B9B9B);
 class ProfileEditScreen extends StatefulWidget {
   final Person? person;
   final bool isParent;
+  final String lineageId;
 
   const ProfileEditScreen({
     super.key,
     this.person,
     this.isParent = false,
+    required this.lineageId,
   });
 
   @override
@@ -31,6 +32,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _supabase = Supabase.instance.client;
   final ImagePicker _picker = ImagePicker();
 
+  // Controllers
   late TextEditingController _firstCtrl;
   late TextEditingController _middleCtrl;
   late TextEditingController _lastCtrl;
@@ -50,10 +52,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   String? _existingPhotoUrl;
 
   bool _isSaving = false;
+  bool _isAuthenticated = false;
 
   @override
   void initState() {
     super.initState();
+    _checkAuthStatus();
+
     final p = widget.person;
     _firstCtrl = TextEditingController(text: p?.firstName ?? '');
     _middleCtrl = TextEditingController(text: p?.middleName ?? '');
@@ -71,6 +76,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     _partnerCtrl = TextEditingController(text: p?.partnerName ?? '');
 
     _existingPhotoUrl = p?.photoUrl;
+  }
+
+  void _checkAuthStatus() {
+    final session = _supabase.auth.currentSession;
+    setState(() => _isAuthenticated = session != null);
+
+    _supabase.auth.onAuthStateChange.listen((data) {
+      if (mounted) {
+        setState(() => _isAuthenticated = data.session != null);
+      }
+    });
   }
 
   @override
@@ -93,7 +109,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Future<void> _pickImage() async {
-    if (_isSaving) return;
+    if (!_isAuthenticated || _isSaving) {
+      _showLoginRequired();
+      return;
+    }
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
@@ -103,9 +122,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       if (image != null) {
         final bytes = await image.readAsBytes();
-        setState(() {
-          _selectedImageBytes = bytes;
-        });
+        setState(() => _selectedImageBytes = bytes);
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,6 +132,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Future<String?> _uploadCompressedImage() async {
+    if (!_isAuthenticated) return _existingPhotoUrl;
     if (_selectedImageBytes == null) return _existingPhotoUrl;
 
     try {
@@ -126,7 +144,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       }
 
       final webpBytes = img.encodeWebP(image);
-
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.webp';
       final path = 'profile_photos/$fileName';
 
@@ -136,8 +153,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             fileOptions: const FileOptions(contentType: 'image/webp'),
           );
 
-      final publicUrl = _supabase.storage.from('profiles').getPublicUrl(path);
-      return publicUrl;
+      return _supabase.storage.from('profiles').getPublicUrl(path);
     } catch (e) {
       debugPrint('❌ Upload Error: $e');
       return _existingPhotoUrl;
@@ -145,6 +161,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Future<void> _save() async {
+    if (!_isAuthenticated) {
+      _showLoginRequired();
+      return;
+    }
     if (_isSaving) return;
 
     if (_firstCtrl.text.trim().isEmpty || _lastCtrl.text.trim().isEmpty) {
@@ -154,9 +174,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     try {
       final photoUrl = await _uploadCompressedImage();
@@ -176,15 +194,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
         facebook: _fbCtrl.text.trim().isEmpty ? null : _fbCtrl.text.trim(),
         instagram: _instaCtrl.text.trim().isEmpty ? null : _instaCtrl.text.trim(),
-       partnerName: _partnerCtrl.text.trim().isEmpty ? null : _partnerCtrl.text.trim(),
-photoUrl: photoUrl,
-parentCount: widget.person?.parentCount ?? 0,
-fatherId: widget.person?.fatherId, // preserve — not editable in this form
+        partnerName: _partnerCtrl.text.trim().isEmpty ? null : _partnerCtrl.text.trim(),
+        photoUrl: photoUrl,
+        parentCount: widget.person?.parentCount ?? 0,
+        fatherId: widget.person?.fatherId,
+        lineageId: widget.person?.lineageId ?? widget.lineageId,
       );
 
-      if (mounted) {
-        Navigator.pop(context, person);
-      }
+      if (mounted) Navigator.pop(context, person);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -192,17 +209,23 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  void _showLoginRequired() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Please log in to edit or add profiles'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isNew = widget.person == null;
+    final canEdit = _isAuthenticated;
 
     return Scaffold(
       body: Container(
@@ -237,7 +260,6 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Header row: title + back button
                           Row(
                             children: [
                               Expanded(
@@ -263,12 +285,36 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
                                 : 'Update their details below.',
                             style: const TextStyle(fontSize: 14, color: _kHintColor),
                           ),
+
+                          if (!canEdit) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.lock, color: Colors.amber),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Login required to edit profiles',
+                                      style: TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+
                           const SizedBox(height: 24),
 
                           // Photo
                           Center(
                             child: GestureDetector(
-                              onTap: _pickImage,
+                              onTap: canEdit ? _pickImage : null,
                               child: Stack(
                                 alignment: Alignment.bottomRight,
                                 children: [
@@ -279,76 +325,64 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
                                         ? MemoryImage(_selectedImageBytes!)
                                         : (_existingPhotoUrl != null
                                             ? NetworkImage(_existingPhotoUrl!)
-                                            : null) as ImageProvider?,
-                                    child: (_selectedImageBytes == null &&
-                                            _existingPhotoUrl == null)
-                                        ? const Icon(Icons.person,
-                                            size: 56, color: _kHintColor)
+                                            : null),
+                                    child: (_selectedImageBytes == null && _existingPhotoUrl == null)
+                                        ? const Icon(Icons.person, size: 56, color: _kHintColor)
                                         : null,
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.all(7),
-                                    decoration: const BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [_kAccentStart, _kAccentEnd],
+                                  if (canEdit)
+                                    Container(
+                                      padding: const EdgeInsets.all(7),
+                                      decoration: const BoxDecoration(
+                                        gradient: LinearGradient(colors: [_kAccentStart, _kAccentEnd]),
+                                        shape: BoxShape.circle,
                                       ),
-                                      shape: BoxShape.circle,
+                                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
                                     ),
-                                    child: const Icon(Icons.camera_alt,
-                                        color: Colors.white, size: 18),
-                                  ),
                                 ],
                               ),
                             ),
                           ),
                           const SizedBox(height: 8),
-                          const Center(
-                            child: Text('Tap to change photo',
-                                style: TextStyle(color: _kHintColor, fontSize: 13)),
+                          Center(
+                            child: Text(
+                              canEdit ? 'Tap to change photo' : 'Photo',
+                              style: TextStyle(color: _kHintColor, fontSize: 13),
+                            ),
                           ),
                           const SizedBox(height: 28),
 
                           _sectionLabel('Basic Information'),
                           const SizedBox(height: 14),
                           _fieldGrid([
-                            _field('First name', _firstCtrl, hint: 'Roman'),
-                            _field('Middle name', _middleCtrl, hint: 'Optional'),
+                            _field('First name', _firstCtrl, hint: 'Roman', readOnly: !canEdit),
+                            _field('Middle name', _middleCtrl, hint: 'Optional', readOnly: !canEdit),
                           ]),
                           _fieldGrid([
-                            _field('Last name', _lastCtrl, hint: 'Bajracharya'),
-                            _field("Partner's name", _partnerCtrl, hint: 'Optional'),
+                            _field('Last name', _lastCtrl, hint: 'Bajracharya', readOnly: !canEdit),
+                            _field("Partner's name", _partnerCtrl, hint: 'Optional', readOnly: !canEdit),
                           ]),
-                         _fieldGrid([
-  _field(
-    'Date of birth',
-    _dobCtrl,
-    hint: 'YYYY-MM-DD',
-    keyboardType: TextInputType.number,
-    inputFormatters: [_DateInputFormatter()],
-  ),
-  _field(
-    'Date of death',
-    _dodCtrl,
-    hint: 'YYYY-MM-DD',
-    keyboardType: TextInputType.number,
-    inputFormatters: [_DateInputFormatter()],
-  ),
-]),
+                          _fieldGrid([
+                            _field('Date of birth', _dobCtrl, hint: 'YYYY-MM-DD', readOnly: !canEdit, inputFormatters: [_DateInputFormatter()]),
+                            _field('Date of death', _dodCtrl, hint: 'YYYY-MM-DD', readOnly: !canEdit, inputFormatters: [_DateInputFormatter()]),
+                          ]),
 
                           const SizedBox(height: 24),
                           _sectionLabel('Additional Information'),
                           const SizedBox(height: 14),
                           _fieldGrid([
-                            _field('Occupation', _occCtrl, hint: 'e.g. Engineer'),
-                            _field('Education', _eduCtrl, hint: 'e.g. MIT'),
+                            _field('Occupation', _occCtrl, hint: 'e.g. Engineer', readOnly: !canEdit),
+                            _field('Education', _eduCtrl, hint: 'e.g. MIT', readOnly: !canEdit),
                           ]),
-                          _field('Address', _addrCtrl, hint: 'City, Country', fullWidth: true),
+                          _field('Address', _addrCtrl, hint: 'City, Country', fullWidth: true, readOnly: !canEdit),
                           const SizedBox(height: 14),
                           _labeled(
                             'Bio / Description',
                             TextField(
                               controller: _descCtrl,
                               maxLines: 3,
+                              readOnly: !canEdit,
+                              enabled: canEdit,
                               decoration: _decoration('Tell us briefly about them'),
                             ),
                           ),
@@ -357,12 +391,12 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
                           _sectionLabel('Contact & Social'),
                           const SizedBox(height: 14),
                           _fieldGrid([
-                            _field('Phone', _phoneCtrl, hint: 'e.g. 980000000'),
-                            _field('Email address', _emailCtrl, hint: 'example@domain.com'),
+                            _field('Phone', _phoneCtrl, hint: 'e.g. 980000000', readOnly: !canEdit),
+                            _field('Email address', _emailCtrl, hint: 'example@domain.com', readOnly: !canEdit),
                           ]),
                           _fieldGrid([
-                            _field('Facebook link', _fbCtrl, hint: 'https://facebook.com/...'),
-                            _field('Instagram', _instaCtrl, hint: '@username'),
+                            _field('Facebook link', _fbCtrl, hint: 'https://facebook.com/...', readOnly: !canEdit),
+                            _field('Instagram', _instaCtrl, hint: '@username', readOnly: !canEdit),
                           ]),
 
                           const SizedBox(height: 28),
@@ -371,27 +405,22 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
                             width: double.infinity,
                             height: 52,
                             child: ElevatedButton(
-                              onPressed: _isSaving ? null : _save,
+                              onPressed: canEdit && !_isSaving ? _save : null,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _kAccentStart,
                                 disabledBackgroundColor: _kAccentStart.withOpacity(0.5),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                 elevation: 0,
                               ),
                               child: _isSaving
                                   ? const SizedBox(
                                       width: 22,
                                       height: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.4,
-                                        color: Colors.white,
-                                      ),
+                                      child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
                                     )
-                                  : const Text(
-                                      'Save',
-                                      style: TextStyle(
+                                  : Text(
+                                      canEdit ? 'Save' : 'Login to Save',
+                                      style: const TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w700,
                                         color: Colors.white,
@@ -408,29 +437,21 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
 
               if (_isSaving)
                 Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: false,
-                    child: Container(
-                      color: Colors.black.withOpacity(0.25),
-                      child: Center(
-                        child: Card(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          margin: const EdgeInsets.all(24),
-                          child: const Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircularProgressIndicator(color: _kAccentStart),
-                                SizedBox(height: 16),
-                                Text(
-                                  'Compressing & Uploading...',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
+                  child: Container(
+                    color: Colors.black.withOpacity(0.25),
+                    child: Center(
+                      child: Card(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        margin: const EdgeInsets.all(24),
+                        child: const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(color: _kAccentStart),
+                              SizedBox(height: 16),
+                              Text('Compressing & Uploading...', style: TextStyle(fontWeight: FontWeight.w600)),
+                            ],
                           ),
                         ),
                       ),
@@ -444,9 +465,7 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
     );
   }
 
-  // ---------------------------------------------------------------------
-  // UI helpers
-  // ---------------------------------------------------------------------
+  // ==================== UI Helpers ====================
 
   Widget _sectionLabel(String text) => Text(
         text,
@@ -486,27 +505,32 @@ fatherId: widget.person?.fatherId, // preserve — not editable in this form
       ),
     );
   }
-Widget _field(
-  String label,
-  TextEditingController controller, {
-  String? hint,
-  bool fullWidth = false,
-  List<TextInputFormatter>? inputFormatters,
-  TextInputType? keyboardType,
-}) {
-  final field = _labeled(
-    label,
-    TextField(
-      controller: controller,
-      decoration: _decoration(hint),
-      inputFormatters: inputFormatters,
-      keyboardType: keyboardType,
-    ),
-  );
-  return fullWidth
-      ? Padding(padding: const EdgeInsets.only(bottom: 14), child: field)
-      : field;
-}
+
+  Widget _field(
+    String label,
+    TextEditingController controller, {
+    String? hint,
+    bool fullWidth = false,
+    List<TextInputFormatter>? inputFormatters,
+    TextInputType? keyboardType,
+    bool readOnly = false,
+  }) {
+    final field = _labeled(
+      label,
+      TextField(
+        controller: controller,
+        decoration: _decoration(hint),
+        inputFormatters: inputFormatters,
+        keyboardType: keyboardType,
+        readOnly: readOnly,
+        enabled: !readOnly,
+      ),
+    );
+    return fullWidth
+        ? Padding(padding: const EdgeInsets.only(bottom: 14), child: field)
+        : field;
+  }
+
   Widget _labeled(String label, Widget input) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -548,7 +572,7 @@ Widget _field(
   }
 }
 
-// Auto-inserts hyphens as the user types: YYYY-MM-DD
+// Date Formatter
 class _DateInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
