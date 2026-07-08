@@ -264,88 +264,111 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
     );
   }
+Widget _buildProfileCard(Person person, Node node) {
+  final bool canAddParent = person.fatherId == null;
 
-    Widget _buildProfileCard(Person person, Node node) {
-    final bool canAddParent = person.fatherId == null;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Upper Add Parent Button
-        if (canAddParent)
-          IconButton(
-            icon: const Icon(Icons.add_circle, color: Colors.blue, size: 30),
-            onPressed: () => _openAddParentForm(targetPerson: person),
-          ),
-
-        GestureDetector(
-          onTap: () => _editPerson(node),
-          child: SizedBox(
-            width: 200,
-            height: 190,   // Slightly increased to fit photo
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                color: Colors.white,
-                border: Border.all(color: Colors.grey[300]!, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Photo Display
-                  CircleAvatar(
-                    radius: 38,
-                    backgroundColor: Colors.grey[300],
-                    backgroundImage: person.photoUrl != null
-                        ? NetworkImage(person.photoUrl!)
-                        : null,
-                    child: person.photoUrl == null
-                        ? const Icon(Icons.person, color: Colors.white, size: 45)
-                        : null,
-                  ),
-                  const SizedBox(height: 10),
-
-                  Text(
-                    person.fullName,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (person.dob != null)
-                    Text(
-                      '${person.dob}',
-                      style: const TextStyle(fontSize: 12.5, color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                  if (person.occupation != null)
-                    Text(
-                      person.occupation!,
-                      style: const TextStyle(fontSize: 13),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        // Lower Add Child Button
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      // Upper Add Parent Button
+      if (canAddParent)
         IconButton(
-          icon: const Icon(Icons.add_circle, color: Colors.green, size: 30),
-          onPressed: () => _openAddChildForm(targetPerson: person),
+          icon: const Icon(Icons.add_circle, color: Colors.blue, size: 30),
+          onPressed: () => _openAddParentForm(targetPerson: person),
         ),
-      ],
-    );
-  }}
+
+      GestureDetector(
+        onTap: () => _editPerson(node),
+        child: Container(
+          // 1. Controls responsiveness via constraints instead of a fixed width/height
+          width: 200, 
+          constraints: const BoxConstraints(
+            minHeight: 180, // Gives a baseline height for empty/short profiles
+          ),
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: Colors.white,
+            border: Border.all(color: Colors.grey[300]!, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+          child: Column(
+            // 2. MainAxisSize.min allows the column to compress or expand with text lines
+            mainAxisSize: MainAxisSize.min, 
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Photo Display
+              CircleAvatar(
+                radius: 38,
+                backgroundColor: Colors.grey[300],
+                backgroundImage: person.photoUrl != null
+                    ? NetworkImage(person.photoUrl!)
+                    : null,
+                child: person.photoUrl == null
+                    ? const Icon(Icons.person, color: Colors.white, size: 45)
+                    : null,
+              ),
+              const SizedBox(height: 10),
+
+              Text(
+                person.fullName,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              
+              if (person.dob != null) ...[
+                const SizedBox(height: 4), // Added small space between rows
+                Text(
+                  '${person.dob}',
+                  style: const TextStyle(fontSize: 12.5, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+
+              if (person.occupation != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  person.occupation!,
+                  style: const TextStyle(fontSize: 13),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
+              if (person.partnerName != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '💍 ${person.partnerName!}',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.black54,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+
+      // Lower Add Child Button
+      IconButton(
+        icon: const Icon(Icons.add_circle, color: Colors.green, size: 30),
+        onPressed: () => _openAddChildForm(targetPerson: person),
+      ),
+    ],
+  );
+}}

@@ -176,9 +176,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         email: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
         facebook: _fbCtrl.text.trim().isEmpty ? null : _fbCtrl.text.trim(),
         instagram: _instaCtrl.text.trim().isEmpty ? null : _instaCtrl.text.trim(),
-        partnerName: _partnerCtrl.text.trim().isEmpty ? null : _partnerCtrl.text.trim(),
-        photoUrl: photoUrl,
-        parentCount: widget.person?.parentCount ?? 0,
+       partnerName: _partnerCtrl.text.trim().isEmpty ? null : _partnerCtrl.text.trim(),
+photoUrl: photoUrl,
+parentCount: widget.person?.parentCount ?? 0,
+fatherId: widget.person?.fatherId, // preserve — not editable in this form
       );
 
       if (mounted) {

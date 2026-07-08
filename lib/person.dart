@@ -17,7 +17,6 @@ class Person {
   final String? partnerName;
   final String? photoUrl;        // ← New: For storing image URL from Supabase Storage
   final String? fatherId;
-  final String? motherId;
   int parentCount;
 
   Person({
@@ -38,7 +37,6 @@ class Person {
     this.partnerName,
     this.photoUrl,               // ← New
     this.fatherId,
-    this.motherId,
     this.parentCount = 0,
   });
 
@@ -65,7 +63,6 @@ class Person {
       partnerName: map['partner_name'] as String?,
       photoUrl: map['photo_url'] as String?,           // ← New
       fatherId: map['father_id'] as String?,
-      motherId: map['mother_id'] as String?,
     );
   }
 
@@ -88,7 +85,6 @@ class Person {
       'partner_name': partnerName,
       'photo_url': photoUrl,                           // ← New
       'father_id': fatherId,
-      'mother_id': motherId,
     };
   }
 
@@ -110,7 +106,6 @@ class Person {
     String? partnerName,
     String? photoUrl,
     String? fatherId,
-    String? motherId,
     int? parentCount,
   }) {
     return Person(
@@ -131,7 +126,6 @@ class Person {
       partnerName: partnerName ?? this.partnerName,
       photoUrl: photoUrl ?? this.photoUrl,
       fatherId: fatherId ?? this.fatherId,
-      motherId: motherId ?? this.motherId,
       parentCount: parentCount ?? this.parentCount,
     );
   }
