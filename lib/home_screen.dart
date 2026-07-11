@@ -302,72 +302,90 @@ Future<void> _deletePerson(String personId) async {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
+ @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: Colors.white,
 
-      body: SafeArea(
-        child: FutureBuilder<void>(
-          future: _loadFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text('Failed to load tree: ${snapshot.error}'));
-            }
-            if (persons.isEmpty) {
-              return  Center(child: Column(
+    body: SafeArea(
+      child: FutureBuilder<void>(
+        future: _loadFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Failed to load tree: ${snapshot.error}'));
+          }
+
+          final bool hasData = persons.isNotEmpty;
+          final bool currentLoggedIn = Supabase.instance.client.auth.currentSession != null;
+
+          if (!hasData) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Lottie.asset(
-        'assets/bangsha.json',
-        width: 400,                    // ← Adjust this
-        height: 400,                   // ← Adjust this
-        fit: BoxFit.contain,
-        repeat: true,
-        // Optional: Control alignment
-        alignment: Alignment.center,
-      ),
-  
-                  Text('No family members yet.'),
+                    'assets/bangsha.json',
+                    width: 500,
+                    height: 500,
+                    fit: BoxFit.contain,
+                    repeat: true,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'No family members yet.',
+                    style: TextStyle(fontSize: 18),
+                  ),
                 ],
-              ));
-            }
-
-            WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
-
-            return InteractiveViewer(
-              transformationController: _viewController,
-              constrained: false,
-              boundaryMargin: const EdgeInsets.all(800),
-              minScale: 0.1,
-              maxScale: 3.0,
-              child: GraphView(
-                graph: graph,
-                algorithm: BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
-                paint: Paint()
-                  ..color = Colors.blueGrey[200]!
-                  ..strokeWidth = 2.8
-                  ..style = PaintingStyle.stroke,
-                builder: (Node node) {
-                  final id = node.key!.value as String;
-                  final person = persons[id];
-                  if (person == null) return const SizedBox.shrink();
-                  return _buildProfileCard(person, node);
-                },
               ),
             );
-          },
-        ),
+          }
+
+          WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
+
+          return InteractiveViewer(
+            transformationController: _viewController,
+            constrained: false,
+            boundaryMargin: const EdgeInsets.all(800),
+            minScale: 0.1,
+            maxScale: 3.0,
+            child: GraphView(
+              graph: graph,
+              algorithm: BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
+              paint: Paint()
+                ..color = Colors.blueGrey[200]!
+                ..strokeWidth = 2.8
+                ..style = PaintingStyle.stroke,
+              builder: (Node node) {
+                final id = node.key!.value as String;
+                final person = persons[id];
+                if (person == null) return const SizedBox.shrink();
+                return _buildProfileCard(person, node);
+              },
+            ),
+          );
+        },
       ),
-     floatingActionButton: (!isLoggedIn || _hasAnyData)
-    ? null // Hidden completely if logged out OR if data already exists
-    : FloatingActionButton(
-        onPressed: isLoggedIn ? _addRootPerson : null, // Extra security check
-        child: const Icon(Icons.person_add),
-      ),
-    );
-  }
+    ),
+
+    // ✅ FIXED: Now checks real-time state inside builder
+    floatingActionButton: Builder(
+      builder: (context) {
+        final bool currentLoggedIn = Supabase.instance.client.auth.currentSession != null;
+        final bool hasData = persons.isNotEmpty;
+
+        return (currentLoggedIn && !hasData)
+            ? FloatingActionButton(
+                onPressed: _addRootPerson,
+                child: const Icon(Icons.person_add),
+              )
+            : const SizedBox.shrink();
+      },
+    ),
+  );
+}
 Widget _buildProfileCard(Person person, Node node) {
   final bool isLoggedIn = Supabase.instance.client.auth.currentSession != null;
   final bool showAddParent = person.fatherId == null && isLoggedIn;
