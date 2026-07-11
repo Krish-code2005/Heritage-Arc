@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:heritage_arc/home_screen.dart';
 import 'package:heritage_arc/screens/app_shell.dart';
+import 'package:lottie/lottie.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -20,66 +21,68 @@ class _LoginState extends State<Login> {
 
   // Custom colors
   final Color primaryGreen = const Color.fromARGB(255, 0, 0, 0);
-  final Color bgColor =  const Color.fromARGB(255, 255, 255, 255);
+  final Color bgColor = const Color.fromARGB(255, 255, 255, 255);
   final Color textColor = const Color.fromARGB(221, 0, 0, 0);
 
- Future<void> _handleLogin() async {
-  final username = _usernameController.text.trim();
-  final password = _passwordController.text.trim();
+    static final TextStyle _titleStyle = GoogleFonts.limelight(
+    fontWeight: FontWeight.bold,
+    fontSize: 42,
+  );
 
-  if (username.isEmpty || password.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Please fill all fields"))
-    );
-    return;
-  }
 
-  setState(() => _isLoading = true);
+  Future<void> _handleLogin() async {
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
 
-  try {
-    // 1. Fetch the user's real email from your updated table using their username
-    final response = await Supabase.instance.client
-        .from('user_credentials')
-        .select('email')
-        .eq('username', username)
-        .eq('password', password) // Validating against your custom table credentials
-        .maybeSingle();
-
-    if (response == null || response['email'] == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Invalid username or password"))
-        );
-      }
+    if (username.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please fill all fields")),
+      );
       return;
     }
 
-    final String realEmail = response['email'];
+    setState(() => _isLoading = true);
 
-    // 2. Log into Supabase Auth using the retrieved email.
-    // This starts the official session that AppShell is waiting for!
-    await Supabase.instance.client.auth.signInWithPassword(
-      email: realEmail,
-      password: password,
-    );
+    try {
+      final response = await Supabase.instance.client
+          .from('user_credentials')
+          .select('email')
+          .eq('username', username)
+          .eq('password', password)
+          .maybeSingle();
 
-    // 3. Navigate directly to AppShell
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const AppShell()),
+      if (response == null || response['email'] == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Invalid username or password")),
+          );
+        }
+        return;
+      }
+
+      final String realEmail = response['email'];
+
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: realEmail,
+        password: password,
       );
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AppShell()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Login failed: ${e.toString()}")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Login failed: ${e.toString()}"))
-      );
-    }
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
   }
-}
 
   @override
   void dispose() {
@@ -99,26 +102,36 @@ class _LoginState extends State<Login> {
       borderSide: BorderSide(color: primaryGreen, width: 2.0),
     );
 
-    // The login form as a reusable widget variable
     Widget loginForm = Container(
-      padding: const EdgeInsets.all(40.0),
+      padding: const EdgeInsets.only(left: 40, right: 40, bottom: 40, top: 20),
       alignment: Alignment.center,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 450),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(height: 20,),
-            // full logo with tagline
-            Text('Welcome back!', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textColor)),
-            const SizedBox(height: 24),
+             Text(
+            'Bangsha',
+            style: _titleStyle,
+          ),
+           Text(
+              'The thread that binds us',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+
+        
+               const SizedBox(height: 24),
             TextField(
               controller: _usernameController,
               cursorColor: Colors.grey,
               style: TextStyle(color: textColor),
               decoration: InputDecoration(
                 labelText: 'Username',
-                labelStyle: TextStyle(color: const Color.fromARGB(137, 255, 255, 255)),
+                labelStyle: TextStyle(color: const Color.fromARGB(136, 0, 0, 0)),
                 enabledBorder: roundedBorder,
                 focusedBorder: focusedRoundedBorder,
               ),
@@ -131,7 +144,7 @@ class _LoginState extends State<Login> {
               style: TextStyle(color: textColor),
               decoration: InputDecoration(
                 labelText: 'Password',
-                labelStyle: TextStyle(color: const Color.fromARGB(137, 255, 255, 255)),
+                labelStyle: TextStyle(color: const Color.fromARGB(136, 0, 0, 0)),
                 enabledBorder: roundedBorder,
                 focusedBorder: focusedRoundedBorder,
               ),
@@ -140,7 +153,13 @@ class _LoginState extends State<Login> {
               padding: const EdgeInsets.only(top: 30, bottom: 20),
               child: _isLoading
                   ? CircularProgressIndicator(color: primaryGreen)
-                  : OutlinedButton(onPressed: _handleLogin, child: Text('Login', style: TextStyle(color: primaryGreen))),
+                  : OutlinedButton(
+                      onPressed: _handleLogin,
+                      child: Text(
+                        'Login',
+                        style: TextStyle(color: primaryGreen, fontSize: 16),
+                      ),
+                    ),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -150,8 +169,39 @@ class _LoginState extends State<Login> {
                 MouseRegion(
                   cursor: SystemMouseCursors.click,
                   child: GestureDetector(
-               
-                    child: Text('Contact Krish', style: TextStyle(color: primaryGreen, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                    onTap: () {
+                      // Add your contact logic here
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                           Row(
+                            children: [
+                              Icon(Icons.email, color: Colors.white,),
+                              SizedBox(width: 10,),
+                              Text('krishshrestha.contact@gmail.com')
+                            ],
+                           ),
+                            
+                            Row(
+                            children: [
+                              Icon(Icons.phone, color: Colors.white,),
+                              SizedBox(width: 10,),
+                              Text('+977 9869750231')
+                            ],
+                           )
+                          ],
+                        )),
+                      );
+                    },
+                    child: Text(
+                      'Contact Krish',
+                      style: TextStyle(
+                        color: primaryGreen,
+                        fontWeight: FontWeight.bold,
+                       
+                      ),
+                    ),
                   ),
                 )
               ],
@@ -165,28 +215,33 @@ class _LoginState extends State<Login> {
       backgroundColor: bgColor,
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // If screen is wider than 800px, show the split screen
           if (constraints.maxWidth > 800) {
             return Row(
               children: [
-                Expanded(
-                  child: SizedBox(
-                    height: constraints.maxHeight,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Positioned.fill(
-                          child: Image.asset('assets/register.png', fit: BoxFit.cover),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                // Lottie Animation on Left
+              // Lottie Animation on Left
+Expanded(
+  child: Container(
+    color: Colors.white,
+    child: Center(
+      child: Lottie.asset(
+        'assets/bangsha.json',
+        width: 900,                    // ← Adjust this
+        height: 900,                   // ← Adjust this
+        fit: BoxFit.contain,
+        repeat: true,
+        // Optional: Control alignment
+        alignment: Alignment.center,
+      ),
+    ),
+  ),
+),
+                // Login Form on Right
                 Expanded(child: loginForm),
               ],
             );
           } else {
-            // If screen is narrow, just show the form centered
+            // Mobile view - only form
             return Center(child: loginForm);
           }
         },

@@ -2,12 +2,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:heritage_arc/login.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:heritage_arc/models/lineage.dart';
 import 'package:heritage_arc/home_screen.dart';
-// TODO: Replace this import path with the actual location of your login screen widget
-
 
 const double _kWideBreakpoint = 800;
 
@@ -27,6 +26,27 @@ class _AppShellState extends State<AppShell> {
   String? _selectedLineageId;
   bool _isLoading = true;
 
+  // ==================== UNIVERSAL TEXT STYLES ====================
+  static final TextStyle _titleStyle = GoogleFonts.limelight(
+    fontWeight: FontWeight.bold,
+    fontSize: 24,
+  );
+
+  static final TextStyle _bodyStyle = GoogleFonts.poppins(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    color: Colors.black87,
+  );
+
+  static final TextStyle _sidebarItemStyle = GoogleFonts.poppins(
+    fontSize: 15,
+    fontWeight: FontWeight.w500,
+  );
+
+  // Purple Accent Theme
+  static const Color _purpleAccent = Color(0xFF8E24AA);
+  static const Color _lightPurpleAccent = Color(0xFFBA68C8);
+
   @override
   void initState() {
     super.initState();
@@ -37,8 +57,7 @@ class _AppShellState extends State<AppShell> {
       setState(() {
         _isLoggedIn = data.session != null;
       });
-      // Refresh the lineage list if their login status changes (in case of RLS policies)
-      _loadLineages(); 
+      _loadLineages();
     });
   }
 
@@ -64,7 +83,6 @@ class _AppShellState extends State<AppShell> {
         }
       });
     } catch (e) {
-      // Catching potential RLS or connection errors gracefully
       debugPrint('Error loading lineages: $e');
     } finally {
       setState(() => _isLoading = false);
@@ -77,11 +95,12 @@ class _AppShellState extends State<AppShell> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('New Lineage'),
+        title: Text('New Lineage', style: _bodyStyle.copyWith(fontWeight: FontWeight.bold)),
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(hintText: 'e.g. Shrestha Family'),
+          style: _bodyStyle,
         ),
         actions: [
           TextButton(
@@ -143,21 +162,27 @@ class _AppShellState extends State<AppShell> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 20),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Text(
-            'Heritage Arc',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            'Bangsha',
+            style: _titleStyle,
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Divider(color: Colors.grey.shade300),
+        ),
         const SizedBox(height: 12),
+
+        // Lineages List
         Expanded(
           child: _lineages.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(20),
+              ? Padding(
+                  padding: const EdgeInsets.all(20),
                   child: Text(
                     'No lineages yet. Tap + to create one.',
-                    style: TextStyle(color: Colors.grey),
+                    style: _bodyStyle.copyWith(color: Colors.grey),
                   ),
                 )
               : ListView.builder(
@@ -165,16 +190,23 @@ class _AppShellState extends State<AppShell> {
                   itemBuilder: (context, index) {
                     final lineage = _lineages[index];
                     final isSelected = lineage.id == _selectedLineageId;
+
                     return ListTile(
+                      leading: Icon(
+                        Icons.people,
+                        color: isSelected ? _purpleAccent : Colors.grey.shade600,
+                        size: 26,
+                      ),
                       title: Text(
                         lineage.name,
-                        style: TextStyle(
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
+                        style: _sidebarItemStyle.copyWith(
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                          color: isSelected ? _purpleAccent : Colors.black87,
                         ),
                       ),
                       selected: isSelected,
-                      selectedTileColor: Colors.blue.withOpacity(0.08),
+                      selectedTileColor: _lightPurpleAccent.withOpacity(0.12),
+                      hoverColor: _lightPurpleAccent.withOpacity(0.09),
                       onTap: () {
                         setState(() {
                           _selectedLineageId = lineage.id;
@@ -185,59 +217,53 @@ class _AppShellState extends State<AppShell> {
                   },
                 ),
         ),
+
+        // New Tree Button - Moved ABOVE the divider
+        if (_isLoggedIn)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            child: OutlinedButton.icon(
+              onPressed: () {
+                onSelect?.call();
+                _addLineage();
+              },
+              icon: const Icon(Icons.add),
+              label: Text('New Tree', style: _bodyStyle.copyWith(fontSize: 15)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _purpleAccent,
+                side: const BorderSide(color: _purpleAccent),
+              ),
+            ),
+          ),
+
         const Divider(height: 1),
-        
-        // Contextual action section at the bottom of the sidebar
+
+        // Login / Logout section
         Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 1. Show 'New Tree' button only if logged in
-              if (_isLoggedIn) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
+          child: SizedBox(
+            width: double.infinity,
+            child: _isLoggedIn
+                ? TextButton.icon(
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
                     onPressed: () {
                       onSelect?.call();
-                      _addLineage();
+                      _handleLogout();
                     },
-                    icon: const Icon(Icons.add),
-                    label: const Text('New Tree'),
+                    icon: const Icon(Icons.logout),
+                    label: Text('Log Out', style: _bodyStyle.copyWith(fontSize: 15)),
+                  )
+                : ElevatedButton.icon(
+                    onPressed: () {
+                      onSelect?.call();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const Login()),
+                      );
+                    },
+                    icon: const Icon(Icons.login),
+                    label: Text('Log In', style: _bodyStyle.copyWith(fontSize: 15)),
                   ),
-                ),
-                const SizedBox(height: 8),
-              ],
-
-              // 2. Dynamic Login / Logout actions
-              SizedBox(
-                width: double.infinity,
-                child: _isLoggedIn
-                    ? TextButton.icon(
-                        style: TextButton.styleFrom(foregroundColor: Colors.red),
-                        onPressed: () {
-                          onSelect?.call();
-                          _handleLogout();
-                        },
-                        icon: const Icon(Icons.logout),
-                        label: const Text('Log Out'),
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: () {
-                          onSelect?.call();
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              // Adjust this to your actual login widget class name
-                              builder: (context) => const Login(), 
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.login),
-                        label: const Text('Log In'),
-                      ),
-              ),
-            ],
           ),
         ),
       ],
@@ -279,7 +305,12 @@ class _AppShellState extends State<AppShell> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(_selectedLineageName),
+            title: Text(
+              _selectedLineageName,
+              style: _bodyStyle.copyWith(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black87,
           ),
           drawer: Drawer(
             child: SafeArea(

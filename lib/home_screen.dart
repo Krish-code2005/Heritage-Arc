@@ -1,5 +1,6 @@
 // lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:graphview/GraphView.dart';
 import 'package:heritage_arc/models/person.dart';
@@ -24,6 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final Map<String, Person> persons = {};
   late Future<void> _loadFuture;
+  // Add near other state variables
+  String? _deletingPersonId;
 
 
   @override
@@ -88,6 +91,69 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
   }
+
+  // Add this helper method in _HomeScreenState class
+bool _hasChildren(String personId) {
+  return persons.values.any((p) => p.fatherId == personId);
+}
+
+// Add this delete method in _HomeScreenState class
+Future<void> _deletePerson(String personId) async {
+  final person = persons[personId];
+  if (person == null) return;
+
+  if (_hasChildren(personId)) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Cannot delete: This person has children in the tree.'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    return;
+  }
+
+  // Confirmation dialog
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete Person'),
+      content: Text('Delete ${person.fullName}? This action cannot be undone.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm != true) return;
+
+  // Start loading
+  setState(() => _deletingPersonId = personId);
+
+  try {
+    await _supabase.from('profiles').delete().eq('id', personId);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Person deleted successfully')),
+    );
+    
+    await _refresh();
+  } catch (e) {
+    _showError(e);
+  } finally {
+    // Always stop loading
+    if (mounted) {
+      setState(() => _deletingPersonId = null);
+    }
+  }
+}
 
   void _centerGraph() {
     if (!mounted) return;
@@ -251,7 +317,21 @@ class _HomeScreenState extends State<HomeScreen> {
               return Center(child: Text('Failed to load tree: ${snapshot.error}'));
             }
             if (persons.isEmpty) {
-              return const Center(child: Text('No family members yet.'));
+              return  Center(child: Column(
+                children: [
+                  Lottie.asset(
+        'assets/bangsha.json',
+        width: 400,                    // ← Adjust this
+        height: 400,                   // ← Adjust this
+        fit: BoxFit.contain,
+        repeat: true,
+        // Optional: Control alignment
+        alignment: Alignment.center,
+      ),
+  
+                  Text('No family members yet.'),
+                ],
+              ));
             }
 
             WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
@@ -289,113 +369,138 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 Widget _buildProfileCard(Person person, Node node) {
-  // 1. Get the current authentication state
   final bool isLoggedIn = Supabase.instance.client.auth.currentSession != null;
-  
-  // Show the add parent button ONLY if they have no fatherId AND are logged in
   final bool showAddParent = person.fatherId == null && isLoggedIn;
+  final bool canDelete = isLoggedIn && !_hasChildren(person.id);
 
   return Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      // Upper Add Parent Button (Hidden completely if not logged in)
+      // Upper Add Parent Button
       if (showAddParent)
         IconButton(
           icon: const Icon(Icons.add_circle, color: Colors.blue, size: 30),
-          // Extra safety: set onPressed to null if not logged in (disables mechanically)
           onPressed: isLoggedIn ? () => _openAddParentForm(targetPerson: person) : null,
         ),
 
       GestureDetector(
         onTap: () => _editPerson(node),
-        child: Container(
-          width: 200, 
-          constraints: const BoxConstraints(
-            minHeight: 180, 
-          ),
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            color: Colors.white,
-            border: Border.all(color: Colors.grey[300]!, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min, 
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Photo Display
-              CircleAvatar(
-                radius: 38,
-                backgroundColor: Colors.grey[300],
-                backgroundImage: person.photoUrl != null
-                    ? NetworkImage(person.photoUrl!)
-                    : null,
-                child: person.photoUrl == null
-                    ? const Icon(Icons.person, color: Colors.white, size: 45)
-                    : null,
-              ),
-              const SizedBox(height: 10),
-
-              Text(
-                person.fullName,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              
-              if (person.dob != null) ...[
-                const SizedBox(height: 4), 
-                Text(
-                  '${person.dob}',
-                  style: const TextStyle(fontSize: 12.5, color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-
-              if (person.occupation != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  person.occupation!,
-                  style: const TextStyle(fontSize: 13),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-
-              if (person.partnerName != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '💍 ${person.partnerName!}',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontStyle: FontStyle.italic,
-                    color: Colors.black54,
+        child: Stack(
+          children: [
+            Container(
+              width: 200,
+              constraints: const BoxConstraints(minHeight: 180),
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                color: Colors.white,
+                border: Border.all(color: Colors.grey[300]!, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
                   ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 38,
+                    backgroundColor: Colors.grey[300],
+                    backgroundImage: person.photoUrl != null
+                        ? NetworkImage(person.photoUrl!)
+                        : null,
+                    child: person.photoUrl == null
+                        ? const Icon(Icons.person, color: Colors.white, size: 45)
+                        : null,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    person.fullName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (person.dob != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${person.dob}',
+                      style: const TextStyle(fontSize: 12.5, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  if (person.occupation != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      person.occupation!,
+                      style: const TextStyle(fontSize: 13),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (person.partnerName != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '💍 ${person.partnerName!}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.black54,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // Delete Button (Top Right)
+            if (canDelete)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => _deletePerson(person.id),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.delete_forever,
+                        color: Colors.red,
+                        size: 22,
+                      ),
+                    ),
+                  ),
                 ),
-              ],
-            ],
-          ),
+              ),
+          ],
         ),
       ),
 
-      // Lower Add Child Button (Hidden completely if not logged in)
+      // Lower Add Child Button
       if (isLoggedIn)
         IconButton(
           icon: const Icon(Icons.add_circle, color: Colors.green, size: 30),
-          onPressed: isLoggedIn ? () => _openAddChildForm(targetPerson: person) : null,
+          onPressed: () => _openAddChildForm(targetPerson: person),
         ),
     ],
   );

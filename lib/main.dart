@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       // Fixed the debug banner property flag
       debugShowCheckedModeBanner: false, 
-      title: 'Heritage Arc',
+      title: 'Bangsha',
       theme: ThemeData(
         // Fixed the missing ColorScheme syntax error
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
