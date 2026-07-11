@@ -1,0 +1,45 @@
+name: Build and Deploy Flutter Web to Cloudflare
+
+on:
+  push:
+    branches:
+      - main # Change this to 'master' if your primary branch uses that name
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Pull the repository code
+      - name: Checkout Repository
+        uses: actions/actions/checkout@v4
+
+      # 2. Setup Java environment (required by Flutter)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 3. Setup Flutter framework
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      # 4. Install dependencies
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # 5. Compile Flutter Web Production Assets
+      - name: Build Web Application
+        run: flutter build web --release --web-renderer auto
+
+      # 6. Push build/web directly to Cloudflare Pages
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy build/web --project-name="bangsha" --branch="main"
