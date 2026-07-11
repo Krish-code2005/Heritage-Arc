@@ -29,7 +29,7 @@ class _AppShellState extends State<AppShell> {
   // ==================== UNIVERSAL TEXT STYLES ====================
   static final TextStyle _titleStyle = GoogleFonts.limelight(
     fontWeight: FontWeight.bold,
-    fontSize: 24,
+    fontSize: 22,
   );
 
   static final TextStyle _bodyStyle = GoogleFonts.poppins(
@@ -43,9 +43,11 @@ class _AppShellState extends State<AppShell> {
     fontWeight: FontWeight.w500,
   );
 
-  // Purple Accent Theme
-  static const Color _purpleAccent = Color(0xFF8E24AA);
-  static const Color _lightPurpleAccent = Color(0xFFBA68C8);
+  // Accent Theme (matched to reference UI)
+  static const Color _purpleAccent = Color(0xFF3B7CFF);
+  static const Color _lightPurpleAccent = Color(0xFF3B7CFF);
+  static const Color _sidebarBg = Color(0xFFF7F8FC);
+  static const Color _mutedText = Color(0xFF8A8FA3);
 
   @override
   void initState() {
@@ -95,19 +97,50 @@ class _AppShellState extends State<AppShell> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('New Lineage', style: _bodyStyle.copyWith(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+        contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+        title: Text('New Lineage', style: _bodyStyle.copyWith(fontWeight: FontWeight.w700, fontSize: 18)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. Shrestha Family'),
           style: _bodyStyle,
+          decoration: InputDecoration(
+            hintText: 'e.g. Shrestha Family',
+            hintStyle: _sidebarItemStyle.copyWith(color: _mutedText),
+            filled: true,
+            fillColor: _sidebarBg,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade200),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _purpleAccent, width: 1.5),
+            ),
+          ),
         ),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(foregroundColor: _mutedText),
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _purpleAccent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Create'),
           ),
@@ -157,116 +190,214 @@ class _AppShellState extends State<AppShell> {
     return match.isEmpty ? 'Heritage Arc' : match.first.name;
   }
 
+  String get _currentUserDisplayName {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return 'Account';
+
+    final metadata = user.userMetadata;
+    final username = metadata?['username'] as String?;
+    if (username != null && username.trim().isNotEmpty) return username;
+
+    final fullName = metadata?['full_name'] as String?;
+    if (fullName != null && fullName.trim().isNotEmpty) return fullName;
+
+    final email = user.email;
+    if (email != null && email.contains('@')) return email.split('@').first;
+
+    return 'Account';
+  }
+
   Widget _buildSidebarContent({required VoidCallback? onSelect}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Text(
-            'Bangsha',
-            style: _titleStyle,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Divider(color: Colors.grey.shade300),
-        ),
-        const SizedBox(height: 12),
-
-        // Lineages List
-        Expanded(
-          child: _lineages.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'No lineages yet. Tap + to create one.',
-                    style: _bodyStyle.copyWith(color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _lineages.length,
-                  itemBuilder: (context, index) {
-                    final lineage = _lineages[index];
-                    final isSelected = lineage.id == _selectedLineageId;
-
-                    return ListTile(
-                      leading: Icon(
-                        Icons.people,
-                        color: isSelected ? _purpleAccent : Colors.grey.shade600,
-                        size: 26,
-                      ),
-                      title: Text(
-                        lineage.name,
-                        style: _sidebarItemStyle.copyWith(
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                          color: isSelected ? _purpleAccent : Colors.black87,
-                        ),
-                      ),
-                      selected: isSelected,
-                      selectedTileColor: _lightPurpleAccent.withOpacity(0.12),
-                      hoverColor: _lightPurpleAccent.withOpacity(0.09),
-                      onTap: () {
-                        setState(() {
-                          _selectedLineageId = lineage.id;
-                        });
-                        onSelect?.call();
-                      },
-                    );
-                  },
-                ),
-        ),
-
-        // New Tree Button - Moved ABOVE the divider
-        if (_isLoggedIn)
+    return Container(
+      color: _sidebarBg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ---------- Logo / Title ----------
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            child: OutlinedButton.icon(
-              onPressed: () {
-                onSelect?.call();
-                _addLineage();
-              },
-              icon: const Icon(Icons.add),
-              label: Text('New Tree', style: _bodyStyle.copyWith(fontSize: 15)),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _purpleAccent,
-                side: const BorderSide(color: _purpleAccent),
-              ),
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: _purpleAccent,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(Icons.account_tree_rounded, color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Text('Bangsha', style: _titleStyle.copyWith(color: Colors.black87, fontSize: 20)),
+              ],
             ),
           ),
 
-        const Divider(height: 1),
+          // ---------- Search bar (visual) ----------
+        
 
-        // Login / Logout section
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: double.infinity,
-            child: _isLoggedIn
-                ? TextButton.icon(
-                    style: TextButton.styleFrom(foregroundColor: Colors.red),
-                    onPressed: () {
-                      onSelect?.call();
-                      _handleLogout();
-                    },
-                    icon: const Icon(Icons.logout),
-                    label: Text('Log Out', style: _bodyStyle.copyWith(fontSize: 15)),
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Divider(color: Colors.grey.shade200, height: 1),
+          ),
+          const SizedBox(height: 12),
+
+          // ---------- Lineages List ----------
+          Expanded(
+            child: _lineages.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      'No lineages yet. Tap + to create one.',
+                      style: _bodyStyle.copyWith(color: _mutedText, fontSize: 14),
+                    ),
                   )
-                : ElevatedButton.icon(
-                    onPressed: () {
-                      onSelect?.call();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const Login()),
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _lineages.length,
+                    itemBuilder: (context, index) {
+                      final lineage = _lineages[index];
+                      final isSelected = lineage.id == _selectedLineageId;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Material(
+                          color: isSelected ? _purpleAccent : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              setState(() {
+                                _selectedLineageId = lineage.id;
+                              });
+                              onSelect?.call();
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.people_alt_rounded,
+                                    color: isSelected ? Colors.white : Colors.grey.shade600,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      lineage.name,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: _sidebarItemStyle.copyWith(
+                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                        color: isSelected ? Colors.white : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       );
                     },
-                    icon: const Icon(Icons.login),
-                    label: Text('Log In', style: _bodyStyle.copyWith(fontSize: 15)),
                   ),
           ),
-        ),
-      ],
+
+          // ---------- New Tree Button ----------
+          if (_isLoggedIn)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    onSelect?.call();
+                    _addLineage();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _purpleAccent.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.add, color: _purpleAccent, size: 18),
+                        const SizedBox(width: 6),
+                        Text('New Tree', style: _sidebarItemStyle.copyWith(color: _purpleAccent)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          Divider(color: Colors.grey.shade200, height: 1),
+
+          // ---------- Login / Logout / Profile section ----------
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: _isLoggedIn
+                ? Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: _purpleAccent.withOpacity(0.15),
+                        child: Icon(Icons.person, color: _purpleAccent, size: 20),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _currentUserDisplayName,
+                              overflow: TextOverflow.ellipsis,
+                              style: _sidebarItemStyle.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 2),
+                            InkWell(
+                              onTap: () {
+                                onSelect?.call();
+                                _handleLogout();
+                              },
+                              child: Text(
+                                'Log Out',
+                                style: _sidebarItemStyle.copyWith(fontSize: 13, color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _purpleAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: () {
+                        onSelect?.call();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const Login()),
+                        );
+                      },
+                      icon: const Icon(Icons.login, size: 18),
+                      label: Text('Log In', style: _bodyStyle.copyWith(fontSize: 15, color: Colors.white)),
+                    ),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -289,15 +420,37 @@ class _AppShellState extends State<AppShell> {
 
         if (isWide) {
           return Scaffold(
+            backgroundColor: _sidebarBg,
             body: Row(
               children: [
                 Container(
-                  width: 240,
-                  color: const Color(0xFFF5F5F7),
+                  width: 260,
+                  margin: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
                   child: _buildSidebarContent(onSelect: null),
                 ),
-                const VerticalDivider(width: 1),
-                Expanded(child: mainContent),
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(0, 12, 12, 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: mainContent,
+                  ),
+                ),
               ],
             ),
           );

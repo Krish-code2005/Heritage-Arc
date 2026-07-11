@@ -1,5 +1,6 @@
 // lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
+import 'package:heritage_arc/models/partner.dart';
 import 'package:lottie/lottie.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:graphview/GraphView.dart';
@@ -27,6 +28,9 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<void> _loadFuture;
   // Add near other state variables
   String? _deletingPersonId;
+  bool _isLoading = true;   // ← Add this
+  static const Color _purpleAccent = Color(0xFF3B7CFF);
+  static const Color _lightPurpleAccent = Color(0xFF3B7CFF);
 
 
   @override
@@ -45,41 +49,49 @@ class _HomeScreenState extends State<HomeScreen> {
   // ---------------------------------------------------------------------
   // DATA LOADING — two-pass compiler
   // ---------------------------------------------------------------------
-  Future<void> _loadGraph() async {
-   final response = await _supabase
-    .from('profiles')
-    .select()
-    .eq('lineage_id', widget.lineageId);
+ Future<void> _loadGraph() async {
+  setState(() => _isLoading = true);
+
+  try {
+    final response = await _supabase
+        .from('profiles')
+        .select()
+        .eq('lineage_id', widget.lineageId);
+
     final rows = response as List<dynamic>;
 
     persons.clear();
     graph.nodes.clear();
     graph.edges.clear();
 
-    // Pass 1 — instantiate nodes
     for (final row in rows) {
       final person = Person.fromMap(row as Map<String, dynamic>);
       persons[person.id] = person;
     }
 
-    // Recompute parentCount — only using father
     for (final person in persons.values) {
       person.parentCount = (person.fatherId != null ? 1 : 0);
     }
 
-    // Pass 2 — draw directional father -> child edges
     for (final person in persons.values) {
       final childNode = Node.Id(person.id);
       if (person.fatherId != null && persons.containsKey(person.fatherId)) {
         graph.addEdge(Node.Id(person.fatherId!), childNode);
       }
-      // Root nodes
       if (person.fatherId == null && !_nodeExists(childNode)) {
         graph.addNode(childNode);
       }
     }
-    _hasAnyData = persons.isNotEmpty;
+
+    setState(() {
+      _hasAnyData = persons.isNotEmpty;
+      _isLoading = false;
+    });
+  } catch (e) {
+    setState(() => _isLoading = false);
+    print('Error loading graph: $e');
   }
+}
 
   bool _nodeExists(Node node) => graph.nodes.any((n) => n.key == node.key);
 
@@ -101,6 +113,18 @@ bool _hasChildren(String personId) {
 Future<void> _deletePerson(String personId) async {
   final person = persons[personId];
   if (person == null) return;
+
+  // Must be logged in to delete
+  final loggedIn = Supabase.instance.client.auth.currentSession != null;
+  if (!loggedIn) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('You must be logged in to delete a person.'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    return;
+  }
 
   if (_hasChildren(personId)) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -139,7 +163,11 @@ Future<void> _deletePerson(String personId) async {
 
   try {
     await _supabase.from('profiles').delete().eq('id', personId);
-    
+
+    // Best-effort cleanup of the person's photo in storage.
+    // A failure here should not block the row delete from succeeding.
+    await _deletePersonPhoto(person.photoUrl);
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Person deleted successfully')),
     );
@@ -152,6 +180,35 @@ Future<void> _deletePerson(String personId) async {
     if (mounted) {
       setState(() => _deletingPersonId = null);
     }
+  }
+}
+
+// Removes the corresponding object from Supabase Storage for a given
+// public photo URL. Safe to call with null/empty/malformed URLs — it
+// just no-ops in that case rather than throwing.
+Future<void> _deletePersonPhoto(String? photoUrl) async {
+  if (photoUrl == null || photoUrl.trim().isEmpty) return;
+
+  try {
+    final uri = Uri.parse(photoUrl);
+    final segments = uri.pathSegments;
+
+    // Supabase public storage URLs look like:
+    // https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path/to/file.jpg>
+    final publicIndex = segments.indexOf('public');
+    if (publicIndex == -1 || publicIndex + 1 >= segments.length) {
+      debugPrint('Could not parse storage bucket from photoUrl: $photoUrl');
+      return;
+    }
+
+    final bucket = segments[publicIndex + 1];
+    final objectPath = segments.sublist(publicIndex + 2).join('/');
+    if (objectPath.isEmpty) return;
+
+    await _supabase.storage.from(bucket).remove([objectPath]);
+  } catch (e) {
+    // Don't fail the whole delete flow just because photo cleanup failed.
+    debugPrint('Failed to delete photo from storage: $e');
   }
 }
 
@@ -302,216 +359,215 @@ Future<void> _deletePerson(String personId) async {
   }
 
   @override
- @override
-Widget build(BuildContext context) {
-  return Scaffold(
-    backgroundColor: Colors.white,
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
 
-    body: SafeArea(
-      child: FutureBuilder<void>(
-        future: _loadFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Failed to load tree: ${snapshot.error}'));
-          }
-
-          final bool hasData = persons.isNotEmpty;
-          final bool currentLoggedIn = Supabase.instance.client.auth.currentSession != null;
-
-          if (!hasData) {
-            return Center(
-              child: Column(
+      body: SafeArea(
+        child: FutureBuilder<void>(
+          future: _loadFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text('Failed to load tree: ${snapshot.error}'));
+            }
+            if (persons.isEmpty) {
+              return  Center(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Lottie.asset(
-                    'assets/bangsha.json',
-                    width: 500,
-                    height: 500,
-                    fit: BoxFit.contain,
-                    repeat: true,
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'No family members yet.',
-                    style: TextStyle(fontSize: 18),
-                  ),
+        'assets/bangsha.json',
+        width: 600,                    // ← Adjust this
+        height: 400,                   // ← Adjust this
+        fit: BoxFit.contain,
+        repeat: true,
+        // Optional: Control alignment
+        alignment: Alignment.center,
+      ),
+  
+                  Text('No family members yet.'),
                 ],
+              ));
+            }
+
+            WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
+
+            return InteractiveViewer(
+              transformationController: _viewController,
+              constrained: false,
+              boundaryMargin: const EdgeInsets.all(800),
+              minScale: 0.1,
+              maxScale: 3.0,
+              child: GraphView(
+                graph: graph,
+                algorithm: BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
+                paint: Paint()
+                  ..color = Colors.blueGrey[200]!
+                  ..strokeWidth = 2.8
+                  ..style = PaintingStyle.stroke,
+                builder: (Node node) {
+                  final id = node.key!.value as String;
+                  final person = persons[id];
+                  if (person == null) return const SizedBox.shrink();
+                  return _buildProfileCard(person, node);
+                },
               ),
             );
-          }
-
-          WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
-
-          return InteractiveViewer(
-            transformationController: _viewController,
-            constrained: false,
-            boundaryMargin: const EdgeInsets.all(800),
-            minScale: 0.1,
-            maxScale: 3.0,
-            child: GraphView(
-              graph: graph,
-              algorithm: BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
-              paint: Paint()
-                ..color = Colors.blueGrey[200]!
-                ..strokeWidth = 2.8
-                ..style = PaintingStyle.stroke,
-              builder: (Node node) {
-                final id = node.key!.value as String;
-                final person = persons[id];
-                if (person == null) return const SizedBox.shrink();
-                return _buildProfileCard(person, node);
-              },
-            ),
-          );
-        },
+          },
+        ),
       ),
-    ),
+floatingActionButton: (Supabase.instance.client.auth.currentSession != null && !_hasAnyData)
+    ? FloatingActionButton(
 
-    // ✅ FIXED: Now checks real-time state inside builder
-    floatingActionButton: Builder(
-      builder: (context) {
-        final bool currentLoggedIn = Supabase.instance.client.auth.currentSession != null;
-        final bool hasData = persons.isNotEmpty;
-
-        return (currentLoggedIn && !hasData)
-            ? FloatingActionButton(
-                onPressed: _addRootPerson,
-                child: const Icon(Icons.person_add),
-              )
-            : const SizedBox.shrink();
-      },
-    ),
-  );
-}
+        onPressed: _addRootPerson,
+        elevation: 0,
+        backgroundColor: _purpleAccent,
+        child: const Icon(Icons.person_add, color: Colors.white,),
+      )
+    : null,
+    );
+  }
 Widget _buildProfileCard(Person person, Node node) {
   final bool isLoggedIn = Supabase.instance.client.auth.currentSession != null;
   final bool showAddParent = person.fatherId == null && isLoggedIn;
   final bool canDelete = isLoggedIn && !_hasChildren(person.id);
+  final bool isDeleting = _deletingPersonId == person.id;
+
+  // Filter partners with valid names
+  final Partner? partner1 = (person.partner1?.name?.trim().isNotEmpty ?? false) ? person.partner1 : null;
+  final Partner? partner2 = (person.partner2?.name?.trim().isNotEmpty ?? false) ? person.partner2 : null;
+  final bool hasPartners = partner1 != null || partner2 != null;
 
   return Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      // Upper Add Parent Button
       if (showAddParent)
         IconButton(
           icon: const Icon(Icons.add_circle, color: Colors.blue, size: 30),
           onPressed: isLoggedIn ? () => _openAddParentForm(targetPerson: person) : null,
         ),
 
-      GestureDetector(
-        onTap: () => _editPerson(node),
-        child: Stack(
-          children: [
-            Container(
-              width: 200,
-              constraints: const BoxConstraints(minHeight: 180),
-              margin: const EdgeInsets.symmetric(vertical: 4),
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: () => _editPerson(node),
+            child: Container(
+              width: hasPartners ? 480 : 220,
+              constraints: const BoxConstraints(minHeight: 210),
+              margin: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(22),
                 color: Colors.white,
                 border: Border.all(color: Colors.grey[300]!, width: 1.5),
                 boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
+                  BoxShadow(color: Colors.black.withOpacity(0.09), blurRadius: 14, offset: const Offset(0, 6)),
                 ],
               ),
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircleAvatar(
-                    radius: 38,
-                    backgroundColor: Colors.grey[300],
-                    backgroundImage: person.photoUrl != null
-                        ? NetworkImage(person.photoUrl!)
-                        : null,
-                    child: person.photoUrl == null
-                        ? const Icon(Icons.person, color: Colors.white, size: 45)
-                        : null,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    person.fullName,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (person.dob != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '${person.dob}',
-                      style: const TextStyle(fontSize: 12.5, color: Colors.grey),
-                      textAlign: TextAlign.center,
+                  // ==================== MAIN PERSON ====================
+                  Expanded(
+                    flex: 4,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 42,
+                          backgroundColor: Colors.grey[300],
+                          backgroundImage: person.photoUrl != null ? NetworkImage(person.photoUrl!) : null,
+                          child: person.photoUrl == null
+                              ? const Icon(Icons.person, color: Colors.white, size: 48)
+                              : null,
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          person.fullName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (person.dob != null) ...[
+                          const SizedBox(height: 4),
+                          Text(person.dob!, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                        ],
+                        if (person.occupation != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            person.occupation!,
+                            style: const TextStyle(fontSize: 13.5),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
-                  if (person.occupation != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      person.occupation!,
-                      style: const TextStyle(fontSize: 13),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  ),
+
+                  // ==================== VERTICAL DIVIDER ====================
+                  if (hasPartners)
+                    Container(
+                      height: 160,
+                      width: 1.5,
+                      color: Colors.grey[400],
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
                     ),
-                  ],
-                  if (person.partnerName != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '💍 ${person.partnerName!}',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontStyle: FontStyle.italic,
-                        color: Colors.black54,
+
+                  // ==================== PARTNERS ====================
+                  if (hasPartners)
+                    Expanded(
+                      flex: 6,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (partner1 != null) _buildPartnerMiniCard(partner1),
+                          if (partner2 != null) _buildPartnerMiniCard(partner2),
+                        ],
                       ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ],
                 ],
               ),
             ),
+          ),
 
-            // Delete Button (Top Right)
-            if (canDelete)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () => _deletePerson(person.id),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.delete_forever,
-                        color: Colors.red,
-                        size: 22,
-                      ),
+          // ==================== DELETE BUTTON ====================
+          // Only visible when the user is logged in AND this person has
+          // no children pointing at them via father_id (canDelete).
+          if (canDelete)
+            Positioned(
+              top: -6,
+              right: -6,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: isDeleting ? null : () => _deletePerson(person.id),
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 4, offset: const Offset(0, 2)),
+                      ],
                     ),
+                    child: isDeleting
+                        ? const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.close, color: Colors.white, size: 16),
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
 
       // Lower Add Child Button
@@ -519,6 +575,48 @@ Widget _buildProfileCard(Person person, Node node) {
         IconButton(
           icon: const Icon(Icons.add_circle, color: Colors.green, size: 30),
           onPressed: () => _openAddChildForm(targetPerson: person),
+        ),
+    ],
+  );
+}
+
+// Partner Mini Card
+Widget _buildPartnerMiniCard(Partner partner) {
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      CircleAvatar(
+        radius: 42,
+        backgroundColor: Colors.pink[50],
+        backgroundImage: partner.photoUrl != null ? NetworkImage(partner.photoUrl!) : null,
+        child: partner.photoUrl == null
+            ? const Icon(Icons.person, color: Colors.pink, size: 32)
+            : null,
+      ),
+     
+      const SizedBox(height: 10),
+      SizedBox(
+        width: 115,
+        child: Text(
+          partner.name ?? '',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16.5),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+       SizedBox(height: 10,),
+      Text('Partner',style: const TextStyle(fontSize: 13.5, color: Colors.grey),),
+      if (partner.occupation != null)
+        SizedBox(
+          width: 115,
+          child: Text(
+            partner.occupation!,
+            style: const TextStyle(fontSize: 13.5, color: Colors.grey),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
     ],
   );

@@ -1,4 +1,6 @@
 // lib/models/person.dart
+import 'partner.dart';
+
 class Person {
   final String id;
   final String firstName;
@@ -14,11 +16,19 @@ class Person {
   final String? instagram;
   final String? phone;
   final String? email;
-  final String? partnerName;
-  final String? photoUrl;        // ← For storing image URL from Supabase Storage
+  final String? photoUrl;
+
   final String? fatherId;
-  final String? lineageId;       // ← New: which family tree this person belongs to
+  final String? lineageId;
   int parentCount;
+
+  // Partner details
+  final Partner? partner1;
+  final Partner? partner2;
+
+  // Display names for parents (filled after fetching)
+  String? fatherName;
+  String? motherName;        // ← Added even without mother_id
 
   Person({
     required this.id,
@@ -35,16 +45,22 @@ class Person {
     this.instagram,
     this.phone,
     this.email,
-    this.partnerName,
     this.photoUrl,
     this.fatherId,
-    this.lineageId,              // ← New
+    this.lineageId,
     this.parentCount = 0,
+    this.partner1,
+    this.partner2,
+    this.fatherName,
+    this.motherName,
   });
 
   String get fullName => [firstName, middleName, lastName]
       .where((e) => e != null && e.isNotEmpty)
       .join(' ');
+
+  String get fatherFullName => fatherName ?? '';
+  String get motherFullName => motherName ?? '';
 
   factory Person.fromMap(Map<String, dynamic> map) {
     return Person(
@@ -62,10 +78,17 @@ class Person {
       instagram: map['instagram_url'] as String?,
       phone: map['phone'] as String?,
       email: map['email'] as String?,
-      partnerName: map['partner_name'] as String?,
       photoUrl: map['photo_url'] as String?,
       fatherId: map['father_id'] as String?,
-      lineageId: map['lineage_id'] as String?,   // ← New
+      lineageId: map['lineage_id'] as String?,
+      fatherName: map['father_name'] as String?,      // ← From join or extra column
+      motherName: map['mother_name'] as String?,      // ← From join or extra column
+      partner1: map['partner1'] != null 
+          ? Partner.fromMap(map['partner1'] as Map<String, dynamic>)
+          : null,
+      partner2: map['partner2'] != null 
+          ? Partner.fromMap(map['partner2'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -85,14 +108,17 @@ class Person {
       'instagram_url': instagram,
       'phone': phone,
       'email': email,
-      'partner_name': partnerName,
       'photo_url': photoUrl,
       'father_id': fatherId,
-      'lineage_id': lineageId,     // ← New
+      'lineage_id': lineageId,
+      'father_name': fatherName,
+    'mother_name': motherName,
+      // Names are usually not saved, but fetched via joins
+      'partner1': partner1?.toMap(),
+      'partner2': partner2?.toMap(),
     };
   }
 
-  // copyWith updated too
   Person copyWith({
     String? firstName,
     String? middleName,
@@ -107,11 +133,14 @@ class Person {
     String? instagram,
     String? phone,
     String? email,
-    String? partnerName,
     String? photoUrl,
     String? fatherId,
     String? lineageId,
     int? parentCount,
+    Partner? partner1,
+    Partner? partner2,
+    String? fatherName,
+    String? motherName,
   }) {
     return Person(
       id: id,
@@ -128,11 +157,14 @@ class Person {
       instagram: instagram ?? this.instagram,
       phone: phone ?? this.phone,
       email: email ?? this.email,
-      partnerName: partnerName ?? this.partnerName,
       photoUrl: photoUrl ?? this.photoUrl,
       fatherId: fatherId ?? this.fatherId,
       lineageId: lineageId ?? this.lineageId,
       parentCount: parentCount ?? this.parentCount,
+      partner1: partner1 ?? this.partner1,
+      partner2: partner2 ?? this.partner2,
+      fatherName: fatherName ?? this.fatherName,
+      motherName: motherName ?? this.motherName,
     );
   }
 }
