@@ -34,7 +34,7 @@ jobs:
 
       # 5. Compile Flutter Web Production Assets
       - name: Build Web Application
-        run: flutter build web --release --web-renderer auto
+        run: flutter build web --release
 
       # 6. Push build/web directly to Cloudflare Pages
       - name: Deploy to Cloudflare Pages
