@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -60,6 +61,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   bool _isSaving = false;
   bool _isAuthenticated = false;
+ 
 
   @override
   void initState() {
@@ -151,31 +153,35 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     }
   }
 
-  Future<String?> _uploadImage(Uint8List bytes, String folder) async {
-    try {
-      var image = img.decodeImage(bytes);
-      if (image == null) return null;
+Future<String?> _uploadImage(Uint8List bytes, String folder) async {
+  try {
+    final compressed = await FlutterImageCompress.compressWithList(
+      bytes,
+      minWidth: 800,
+      quality: 85,
+      format: CompressFormat.webp,
+    );
 
-      if (image.width > 800) {
-        image = img.copyResize(image, width: 800);
-      }
+    if (compressed.isEmpty) return null;
 
-      final webpBytes = img.encodeWebP(image);
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.webp';
-      final path = '$folder/$fileName';
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}.webp';
+    final path = '$folder/$fileName';
 
-      await _supabase.storage.from('profiles').uploadBinary(
-            path,
-            webpBytes,
-            fileOptions: const FileOptions(contentType: 'image/webp'),
-          );
+    await _supabase.storage.from('profiles').uploadBinary(
+          path,
+          compressed,
+          fileOptions: const FileOptions(
+            contentType: 'image/webp',
+            upsert: true,
+          ),
+        );
 
-      return _supabase.storage.from('profiles').getPublicUrl(path);
-    } catch (e) {
-      debugPrint('❌ Upload Error: $e');
-      return null;
-    }
+    return _supabase.storage.from('profiles').getPublicUrl(path);
+  } catch (e) {
+    debugPrint('❌ Upload Error: $e');
+    return null;
   }
+}
 
   // ==================== SAVE ====================
   Future<void> _save() async {

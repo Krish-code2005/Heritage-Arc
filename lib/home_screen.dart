@@ -1,11 +1,24 @@
 // lib/screens/home_screen.dart
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+ // for PdfPageFormat
+import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:pdf/widgets.dart' as pw;   // ✅ correct
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' ;
+import 'package:flutter/rendering.dart';
 import 'package:heritage_arc/models/partner.dart';
 import 'package:lottie/lottie.dart';
+import 'package:pdf/pdf.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:graphview/GraphView.dart';
 import 'package:heritage_arc/models/person.dart';
 import 'package:heritage_arc/ProfileEditScreen.dart';
+import 'package:heritage_arc/utils/file_saver.dart';
 
 class HomeScreen extends StatefulWidget {
  final String lineageId;
@@ -31,6 +44,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;   // ← Add this
   static const Color _purpleAccent = Color(0xFF3B7CFF);
   static const Color _lightPurpleAccent = Color(0xFF3B7CFF);
+  final GlobalKey _treeCaptureKey = GlobalKey();
+  bool _isExporting = false;
 
 
   @override
@@ -226,6 +241,97 @@ Future<void> _deletePersonPhoto(String? photoUrl) async {
     );
   }
 
+  Future<Uint8List?> _captureTreeImage({double pixelRatio = 1.5}) async {
+  try {
+    final boundary = _treeCaptureKey.currentContext?.findRenderObject()
+        as RenderRepaintBoundary?;
+    if (boundary == null) return null;
+
+    // Cap pixelRatio for very large trees to avoid OOM
+    final size = boundary.size;
+    final maxDimension = 8000; // safety cap
+    final effectiveRatio = (size.width * pixelRatio > maxDimension ||
+            size.height * pixelRatio > maxDimension)
+        ? (maxDimension / (size.width > size.height ? size.width : size.height))
+        : pixelRatio;
+
+    final image = await boundary.toImage(pixelRatio: effectiveRatio);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
+  } catch (e) {
+    debugPrint('Capture failed: $e');
+    return null;
+  }
+}
+
+Future<void> _waitForFrame() async {
+  // Wait for the *next* frame to be scheduled and rendered
+  final completer = Completer<void>();
+  WidgetsBinding.instance.addPostFrameCallback((_) => completer.complete());
+  // Force a frame to be scheduled if none is pending
+  SchedulerBinding.instance.scheduleFrame();
+  await completer.future;
+}
+
+Future<void> _exportAsImage() async {
+  setState(() => _isExporting = true);
+    await _waitForFrame();   // let the spinner frame paint
+
+  try {
+    final bytes = await _captureTreeImage();
+    if (bytes == null) {
+      _showError('Could not capture tree');
+      return;
+    }
+    await saveBytesAsDownload(bytes, 'family_tree.png', 'image/png');
+  } catch (e, st) {
+    debugPrint('❌ Export image failed: $e\n$st');
+    _showError(e);
+  } finally {
+    if (mounted) setState(() => _isExporting = false);
+  }
+}
+
+Future<void> _exportAsPdf() async {
+  setState(() => _isExporting = true);
+    await _waitForFrame();   // let the spinner frame paint
+
+  try {
+    final bytes = await _captureTreeImage();
+    if (bytes == null) {
+      _showError('Could not capture tree');
+      return;
+    }
+
+    // Heavy synchronous PDF building moved off the UI isolate
+    final pdfBytes = await compute(_buildPdfBytes, bytes);
+
+    await saveBytesAsDownload(pdfBytes, 'family_tree.pdf', 'application/pdf');
+  } catch (e, st) {
+    debugPrint('❌ Export PDF failed: $e\n$st');
+    _showError(e);
+  } finally {
+    if (mounted) setState(() => _isExporting = false);
+  }
+}
+
+// Top-level or static function — required by compute()
+Future<Uint8List> _buildPdfBytes(Uint8List imageBytes) {
+  final image = pw.MemoryImage(imageBytes);
+  final doc = pw.Document();
+  doc.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a3.landscape,
+      margin: const pw.EdgeInsets.all(16),
+      build: (context) => pw.Center(
+        child: pw.Image(image, fit: pw.BoxFit.contain),
+      ),
+    ),
+  );
+  return doc.save(); // note: no `await` needed since this now runs synchronously inside the isolate
+}
+
+
   // ---------------------------------------------------------------------
   // DB-WRITE HOOKS
   // ---------------------------------------------------------------------
@@ -362,61 +468,169 @@ Future<void> _deletePersonPhoto(String? photoUrl) async {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+    //    appBar: AppBar(
+    //   backgroundColor: Colors.white,
+    //   elevation: 0,
+    //   foregroundColor: Colors.black87,
+    //   actions: [
+    //     if (_hasAnyData)
+    //      Padding(
+    //        padding: const EdgeInsets.all(8.0),
+    //        child: PopupMenuButton<String>(
+    //          icon: const Icon(Icons.ios_share, color: Colors.white),
+    //          tooltip: 'Export tree',
+    //          color: Colors.blue,          // background of the dropdown menu itself
+    //          elevation: 4,
+    //          shape: RoundedRectangleBorder(
+    //            borderRadius: BorderRadius.circular(12),
+    //          ),
+    //          style: IconButton.styleFrom(
+    //            backgroundColor: _purpleAccent,   // background behind the icon button
+    //            shape: RoundedRectangleBorder(
+    //              borderRadius: BorderRadius.circular(10),
+    //            ),
+    //            padding: const EdgeInsets.all(8),
+    //          ),
+    //          onSelected: (value) {
+    //            if (value == 'image') _exportAsImage();
+    //            if (value == 'pdf') _exportAsPdf();
+    //          },
+    //          itemBuilder: (context) => const [
+    //            PopupMenuItem(
+    //              value: 'image',
+    //              child: Row(
+    //                children: [
+    //         Icon(Icons.image_outlined, size: 20, color: Colors.white),
+    //         SizedBox(width: 10),
+    //         Text('Export as Image', style: TextStyle(color: Colors.white)),
+    //                ],
+    //              ),
+    //            ),
+    //            PopupMenuItem(
+    //              value: 'pdf',
+    //              child: Row(
+    //                children: [
+    //         Icon(Icons.picture_as_pdf_outlined, size: 20, color: Colors.white),
+    //         SizedBox(width: 10),
+    //         Text('Export as PDF', style: TextStyle(color: Colors.white)),
+    //                ],
+    //              ),
+    //            ),
+    //          ],
+    //        ),
+    //      ),
+    //   ],
+    // ),
 
       body: SafeArea(
-        child: FutureBuilder<void>(
-          future: _loadFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text('Failed to load tree: ${snapshot.error}'));
-            }
-            if (persons.isEmpty) {
-              return  Center(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Lottie.asset(
-        'assets/bangsha.json',
-        width: 600,                    // ← Adjust this
-        height: 400,                   // ← Adjust this
-        fit: BoxFit.contain,
-        repeat: true,
-        // Optional: Control alignment
-        alignment: Alignment.center,
-      ),
-  
-                  Text('No family members yet.'),
-                ],
-              ));
-            }
-
-            WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
-
-            return InteractiveViewer(
+        child: Stack(
+          children: [
+            FutureBuilder<void>(
+              future: _loadFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Failed to load tree: ${snapshot.error}'));
+                }
+                if (persons.isEmpty) {
+                  return  Center(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Lottie.asset(
+            'assets/bangsha.json',
+            width: 600,                    // ← Adjust this
+            height: 400,                   // ← Adjust this
+            fit: BoxFit.contain,
+            repeat: true,
+            // Optional: Control alignment
+            alignment: Alignment.center,
+                  ),
+                  
+              
+                      Text('No family members yet.'),
+                      
+                    ],
+                  )
+                  );
+                }
+            
+                WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
+            
+                return  InteractiveViewer(
               transformationController: _viewController,
               constrained: false,
               boundaryMargin: const EdgeInsets.all(800),
               minScale: 0.1,
               maxScale: 3.0,
-              child: GraphView(
-                graph: graph,
-                algorithm: BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
-                paint: Paint()
-                  ..color = Colors.blueGrey[200]!
-                  ..strokeWidth = 2.8
-                  ..style = PaintingStyle.stroke,
-                builder: (Node node) {
-                  final id = node.key!.value as String;
-                  final person = persons[id];
-                  if (person == null) return const SizedBox.shrink();
-                  return _buildProfileCard(person, node);
-                },
+              child: RepaintBoundary(
+                key: _treeCaptureKey,
+                child: GraphView(
+                  graph: graph,
+                  algorithm: BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
+                  paint: Paint()
+            ..color = Colors.blueGrey[200]!
+            ..strokeWidth = 2.8
+            ..style = PaintingStyle.stroke,
+                  builder: (Node node) {
+            final id = node.key!.value as String;
+            final person = persons[id];
+            if (person == null) return const SizedBox.shrink();
+            return _buildProfileCard(person, node);
+                  },
+                ),
               ),
             );
-          },
+              },
+            ),
+    if (_hasAnyData)
+        Positioned(
+          top: 16,
+          right: 16,
+          child: Material(
+            color: _purpleAccent,
+            borderRadius: BorderRadius.circular(14),
+            elevation: 4,
+            child: PopupMenuButton<String>(
+              icon: const Icon(Icons.ios_share, color: Colors.white),
+              tooltip: 'Export tree',
+              color: Colors.blue,
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              onSelected: (value) {
+                if (value == 'image') _exportAsImage();
+                if (value == 'pdf') _exportAsPdf();
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'image',
+                  child: Row(
+                    children: [
+                      Icon(Icons.image_outlined, size: 20, color: Colors.white),
+                      SizedBox(width: 10),
+                      Text('Export as Image', style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'pdf',
+                  child: Row(
+                    children: [
+                      Icon(Icons.picture_as_pdf_outlined, size: 20, color: Colors.white),
+                      SizedBox(width: 10),
+                      Text('Export as PDF', style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ), 
+          ],
         ),
       ),
 floatingActionButton: (Supabase.instance.client.auth.currentSession != null && !_hasAnyData)
