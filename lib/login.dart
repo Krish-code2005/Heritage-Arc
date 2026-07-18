@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:heritage_arc/home_screen.dart';
@@ -18,11 +19,15 @@ class _LoginState extends State<Login> {
   final TextEditingController _passwordController = TextEditingController();
 
   bool _isLoading = false;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  double _currentVolume = 0.5;
+    bool _isPlaying = false;
 
   // Custom colors
   final Color primaryGreen = const Color.fromARGB(255, 0, 0, 0);
   final Color bgColor = const Color.fromARGB(255, 255, 255, 255);
   final Color textColor = const Color.fromARGB(221, 0, 0, 0);
+  static const Color _purpleAccent = Color(0xFF3B7CFF);
 
     static final TextStyle _titleStyle = GoogleFonts.limelight(
     fontWeight: FontWeight.bold,
@@ -30,7 +35,24 @@ class _LoginState extends State<Login> {
   );
 
 
-  Future<void> _handleLogin() async {
+    Future<void> _startPlayback() async {
+    try {
+      // Set initial volume
+      await _audioPlayer.setVolume(_currentVolume);
+      
+      // Play your asset file automatically on screen entry
+      await _audioPlayer.play(AssetSource('login.mp3'));
+      
+      setState(() {
+        _isPlaying = true;
+      });
+    } catch (e) {
+      print("Error loading audio: $e");
+    }
+  }
+
+
+ Future<void> _handleLogin() async {
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
 
@@ -44,9 +66,10 @@ class _LoginState extends State<Login> {
     setState(() => _isLoading = true);
 
     try {
+      // FIX 1: Explicitly select both username and email so we can use the name later
       final response = await Supabase.instance.client
           .from('user_credentials')
-          .select('email')
+          .select('username, email') 
           .eq('username', username)
           .eq('password', password)
           .maybeSingle();
@@ -61,6 +84,8 @@ class _LoginState extends State<Login> {
       }
 
       final String realEmail = response['email'];
+      // FIX 2: Variable name lowercased to match Dart standards
+      final displayName = response['username'] ?? 'User'; 
 
       await Supabase.instance.client.auth.signInWithPassword(
         email: realEmail,
@@ -68,6 +93,16 @@ class _LoginState extends State<Login> {
       );
 
       if (mounted) {
+        _startPlayback();
+        // Show the welcome message first so the context remains completely stable
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Welcome back, $displayName!'),
+            backgroundColor: _purpleAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const AppShell()),
@@ -88,6 +123,8 @@ class _LoginState extends State<Login> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+     _audioPlayer.stop();
+    _audioPlayer.dispose();
     super.dispose();
   }
 

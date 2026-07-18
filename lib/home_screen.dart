@@ -46,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Color _lightPurpleAccent = Color(0xFF3B7CFF);
   final GlobalKey _treeCaptureKey = GlobalKey();
   bool _isExporting = false;
+  bool _hasAutoFitted = false;
 
 
   @override
@@ -110,14 +111,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _nodeExists(Node node) => graph.nodes.any((n) => n.key == node.key);
 
-  Future<void> _refresh() async {
-    setState(() {
-      _loadFuture = _loadGraph();
-    });
-    await _loadFuture;
-    setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
-  }
+Future<void> _refresh() async {
+  setState(() {
+    _hasAutoFitted = false; // allow re-fit after data changes
+    _loadFuture = _loadGraph();
+  });
+  await _loadFuture;
+  setState(() {});
+  WidgetsBinding.instance.addPostFrameCallback((_) => _centerGraph());
+}
 
   // Add this helper method in _HomeScreenState class
 bool _hasChildren(String personId) {
@@ -152,24 +154,94 @@ Future<void> _deletePerson(String personId) async {
   }
 
   // Confirmation dialog
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Delete Person'),
-      content: Text('Delete ${person.fullName}? This action cannot be undone.'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+ final confirm = await showDialog<bool>(
+  context: context,
+  barrierColor: Colors.black.withOpacity(0.4),
+  builder: (context) => Dialog(
+    backgroundColor: Colors.transparent,
+    insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 340),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          style: TextButton.styleFrom(foregroundColor: Colors.red),
-          child: const Text('Delete'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_outline, color: Colors.red, size: 24),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Delete Person',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Delete ${person.fullName}? This action cannot be undone.',
+              style: TextStyle(fontSize: 13.5, color: Colors.grey[600], height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.black87,
+                      side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-      ],
+      ),
     ),
-  );
+  ),
+);
 
   if (confirm != true) return;
 
@@ -184,7 +256,8 @@ Future<void> _deletePerson(String personId) async {
     await _deletePersonPhoto(person.photoUrl);
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Person deleted successfully')),
+      
+      const SnackBar(content: Text('Person deleted successfully'), backgroundColor: Colors.redAccent,),
     );
     
     await _refresh();
@@ -227,12 +300,37 @@ Future<void> _deletePersonPhoto(String? photoUrl) async {
   }
 }
 
-  void _centerGraph() {
-    if (!mounted) return;
-    final size = MediaQuery.of(context).size;
-    _viewController.value = Matrix4.identity()
-      ..translate(size.width * 0.35, size.height * 0.1);
-  }
+
+
+void _centerGraph({bool forceRefit = false}) {
+  if (!mounted) return;
+
+  final RenderBox? contentBox =
+      _treeCaptureKey.currentContext?.findRenderObject() as RenderBox?;
+  if (contentBox == null || !contentBox.hasSize) return;
+
+  // Only auto-fit once per load (so user's manual pan/zoom isn't
+  // reset on every rebuild) unless explicitly forced (e.g. after refresh).
+  if (_hasAutoFitted && !forceRefit) return;
+  _hasAutoFitted = true;
+
+  final Size contentSize = contentBox.size;
+  final Size viewportSize = MediaQuery.of(context).size;
+
+  const double padding = 80; // breathing room around the tree
+  final double scaleX = (viewportSize.width - padding) / contentSize.width;
+  final double scaleY = (viewportSize.height - padding) / contentSize.height;
+
+  // Don't zoom in past 100% just because the tree is small.
+  double scale = (scaleX < scaleY ? scaleX : scaleY).clamp(0.1, 1.0);
+
+  final double dx = (viewportSize.width - contentSize.width * scale) / 2;
+  final double dy = (viewportSize.height - contentSize.height * scale) / 2;
+
+  _viewController.value = Matrix4.identity()
+    ..translate(dx, dy)
+    ..scale(scale);
+}
 
   void _showError(Object e) {
     if (!mounted) return;
@@ -377,6 +475,18 @@ Future<Uint8List> _buildPdfBytes(Uint8List imageBytes) {
 
       if (updateResult.isNotEmpty) {
         print('✅ SUCCESS: father_id updated!');
+        await _refresh();
+    
+    // Get the name from the updated result object
+    final Name = result.firstName; // Adjust to result.name depending on your model
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("$Name's profile created"), 
+        backgroundColor: Colors.green,
+      ),
+    );
+  
       } else {
         print('❌ STILL FAILED. targetPerson.id = ${targetPerson.id} (${targetPerson.id.runtimeType})');
       }
@@ -406,12 +516,23 @@ Future<Uint8List> _buildPdfBytes(Uint8List imageBytes) {
       final map = result.toMap()..remove('id');
       map['father_id'] = targetPerson.id;
       await _supabase.from('profiles').insert(map);
+
     } catch (e) {
       _showError(e);
       return;
     }
 
     await _refresh();
+
+     // Get the name from the updated result object
+    final Name = result.firstName; // Adjust to result.name depending on your model
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("$Name's profile created"), 
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   Future<void> _editPerson(Node node) async {
@@ -440,7 +561,17 @@ Future<Uint8List> _buildPdfBytes(Uint8List imageBytes) {
       return;
     }
 
-    await _refresh();
+  await _refresh();
+    
+    // Get the name from the updated result object
+    final editedName = result.firstName; // Adjust to result.name depending on your model
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("$editedName's profile updated successfully."), 
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   Future<void> _addRootPerson() async {

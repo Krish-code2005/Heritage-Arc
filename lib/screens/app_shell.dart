@@ -174,7 +174,8 @@ class _AppShellState extends State<AppShell> {
       await _supabase.auth.signOut();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Logged out successfully')),
+        const SnackBar(content: Text('Logged out successfully'),
+        backgroundColor: Colors.redAccent,),
       );
     } catch (e) {
       if (!mounted) return;
