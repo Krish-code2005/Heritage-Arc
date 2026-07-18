@@ -93,20 +93,22 @@ class _LoginState extends State<Login> {
       );
 
       if (mounted) {
-        _startPlayback();
+      
         // Show the welcome message first so the context remains completely stable
-        ScaffoldMessenger.of(context).showSnackBar(
+       
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AppShell()),
+        );
+         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Welcome back, $displayName!'),
             backgroundColor: _purpleAccent,
             behavior: SnackBarBehavior.floating,
           ),
         );
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const AppShell()),
-        );
+          _startPlayback();
       }
     } catch (e) {
       if (mounted) {
